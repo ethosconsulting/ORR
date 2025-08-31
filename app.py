@@ -298,24 +298,24 @@ def simulate_trade(
 
         # Entry logic
         if trade['entry_time'] is None:
-            if current_high < opening_high:  # Long
+            if current_high > opening_high:  # Short
                 entry_price = opening_high - buffer - cost
                 trade.update({
                     'entry_time': idx,
                     'entry_price': entry_price,
                     'direction': 'long',
-                    'tp_price': entry_price + tp_value,
-                    'sl_price': entry_price - sl_value,
+                    'tp_price': entry_price - tp_value,
+                    'sl_price': entry_price + sl_value,
                     'trade_taken': True
                 })
-            elif current_low > opening_low:  # Short
+            elif current_low < opening_low:  # Long
                 entry_price = opening_low + buffer + cost
                 trade.update({
                     'entry_time': idx,
                     'entry_price': entry_price,
                     'direction': 'short',
-                    'tp_price': entry_price - tp_value,
-                    'sl_price': entry_price + sl_value,
+                    'tp_price': entry_price + tp_value,
+                    'sl_price': entry_price - sl_value,
                     'trade_taken': True
                 })
             continue
@@ -992,4 +992,3 @@ if st.sidebar.button("Run Analysis"):
 
                     # Add some spacing between plots
                     st.write("---")
-
