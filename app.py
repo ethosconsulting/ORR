@@ -303,7 +303,7 @@ def simulate_trade(
                 trade.update({
                     'entry_time': idx,
                     'entry_price': entry_price,
-                    'direction': 'long',
+                    'direction': 'short',
                     'tp_price': entry_price - tp_value,
                     'sl_price': entry_price + sl_value,
                     'trade_taken': True
@@ -313,7 +313,7 @@ def simulate_trade(
                 trade.update({
                     'entry_time': idx,
                     'entry_price': entry_price,
-                    'direction': 'short',
+                    'direction': 'long',
                     'tp_price': entry_price + tp_value,
                     'sl_price': entry_price - sl_value,
                     'trade_taken': True
