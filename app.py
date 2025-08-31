@@ -24,24 +24,6 @@ This app analyzes a breakout trading strategy based on the opening range of the 
 
 # Sidebar for user inputs
 with st.sidebar:
-    if st.button("📄 Download Documentation"):
-          # Direct link to raw PDF on GitHub
-          pdf_url = "https://github.com/ethosconsulting/ORR/raw/main/ORRDocumentation.pdf"
-          
-          try:
-              # Fetch the PDF from GitHub
-              response = requests.get(pdf_url)
-              response.raise_for_status()  # Check for errors
-              
-              # Create download button with the PDF content
-              st.download_button(
-                  label="⬇️ Save PDF Now",
-                  data=response.content,
-                  file_name="ORR_Documentation.pdf",
-                  mime="application/pdf"
-              )
-          except requests.exceptions.RequestException as e:
-              st.error(f"Failed to download documentation: {e}")
 
     st.header("Strategy Parameters")
 
@@ -1010,3 +992,4 @@ if st.sidebar.button("Run Analysis"):
 
                     # Add some spacing between plots
                     st.write("---")
+
