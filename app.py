@@ -1,5 +1,5 @@
+#28 ORR
 import streamlit as st
-import requests
 import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
@@ -14,17 +14,16 @@ from itertools import product
 from typing import Dict, Optional, Tuple, Any
 
 # Streamlit app configuration
-st.set_page_config(layout="wide", page_title="Rebound Strategy Analyzer")
+st.set_page_config(layout="wide", page_title="Trading Strategy Analyzer")
 
 # Main title
-st.title("Rebound Strategy Analyzer")
+st.title("Trading Strategy Analyzer")
 st.markdown("""
-This app analyzes a rebound trading strategy that trades the reversal after opening range breakouts.
+This app analyzes a breakout trading strategy based on the opening range of the trading day.
 """)
 
 # Sidebar for user inputs
 with st.sidebar:
-
     if st.button("📄 Download Documentation"):
           # Direct link to raw PDF on GitHub
           pdf_url = "https://github.com/ethosconsulting/ORR/raw/main/ORRDocumentation.pdf"
@@ -43,7 +42,7 @@ with st.sidebar:
               )
           except requests.exceptions.RequestException as e:
               st.error(f"Failed to download documentation: {e}")
-              
+
     st.header("Strategy Parameters")
 
     # Ticker symbol
@@ -55,6 +54,21 @@ with st.sidebar:
         ['Europe/London', 'America/New_York', 'Asia/Tokyo'],
         index=0
     )
+
+    data_source = st.selectbox(
+        "Select Data Source",
+        ["YFinance", "Upload CSV"],
+        index=0,
+        help="Choose between downloading from Yahoo Finance or uploading your own CSV file"
+    )
+
+    uploaded_file = None
+    if data_source == "Upload CSV":
+        uploaded_file = st.file_uploader(
+            "Upload CSV File",
+            type=["csv"],
+            help="Upload a CSV file in the same format as the downloaded data"
+        )
 
     # Trading session hours - using string options but converting to int later
     st.subheader("Trading Session Hours")
@@ -71,28 +85,26 @@ with st.sidebar:
     col1, col2 = st.columns(2)
     with col1:
         or_start_hour = st.number_input("OR Start Hour (0-23)", min_value=0, max_value=23, value=14)
-        or_start_minute = st.selectbox("OR Start Minute", options=['00', '15', '30', '45'], index=2)
+        or_start_minute = st.selectbox("OR Start Minute",
+                                    options=['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
+                                    index=6)  # Default to '30'
     with col2:
-        or_end_hour = st.number_input("OR End Hour (0-23)", min_value=0, max_value=23, value=15)
-        or_end_minute = st.selectbox("OR End Minute", options=['00', '15', '30', '45'], index=0)
-
-    # Rebound confirmation parameters
-    st.subheader("Rebound Confirmation")
-    confirmation_bars = st.number_input("Number of Confirmation Bars", min_value=1, max_value=5, value=1)
-    close_inside = st.checkbox("Require Close Inside OR", value=True)
-    buffer_multiplier = st.number_input("Buffer Multiplier", min_value=0.5, max_value=3.0, value=1.0, step=0.1)
+        or_end_hour = st.number_input("OR End Hour (0-23)", min_value=0, max_value=23, value=14)
+        or_end_minute = st.selectbox("OR End Minute",
+                                    options=['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
+                                    index=11)  # Default to '55' for '30' min close candle for NYC session.
 
     # Date range
     st.subheader("Date Range")
     col1, col2 = st.columns(2)
     with col1:
         # Set start_date to 50 days before today
-        start_date = st.date_input("Start Date", 
+        start_date = st.date_input("Start Date",
                                   value=datetime.now() - timedelta(days=55),
                                   max_value=datetime.now() - timedelta(days=1))
     with col2:
         # Set end_date to today
-        end_date = st.date_input("End Date", 
+        end_date = st.date_input("End Date",
                                 value=datetime.now(),
                                 max_value=datetime.now())
 
@@ -107,16 +119,16 @@ with st.sidebar:
         sl_max = st.number_input("SL Max (points)", min_value=0.1, max_value=100.0, value=10.0, step=0.5)
         sl_step = st.number_input("SL Step", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
 
-    # Optimization Settings
     st.subheader("Optimization Settings")
     skip_poor_rr = st.checkbox("Skip poor risk-reward (SL < TP)", value=True)
 
+
     # Input: Friction parameters
     st.subheader("Friction parameters")
-    buffer_pts = st.sidebar.number_input("Buffer (pts)", min_value=0.0, max_value=10.0, value=0.5, step=0.05)
-    cost_pts = st.sidebar.number_input("Commission + Slippage (pts)", min_value=0.0, max_value=10.0, value=1.0, step=0.1)
+    buffer_pts = st.sidebar.number_input("Buffer (pts)", min_value=0.0, max_value=10.0, value=0.25, step=0.05)
+    cost_pts = st.sidebar.number_input("Commission + Slippage (pts)", min_value=0.0, max_value=10.0, value=0.5, step=0.1)
 
-# Helper functions (same as before)
+# Helper functions (copied from your code with minor modifications)
 def safe_float(value) -> float:
     """Type-safe conversion for pandas/float inputs"""
     if isinstance(value, (pd.Series, pd.DataFrame)):
@@ -147,16 +159,6 @@ def get_trading_days_data(start_date, end_date, ticker, timezone) -> pd.DataFram
     data = data[(data.index >= start_dt) & (data.index <= end_dt)]
 
     return data
-
-def format_duration_minutes(td):
-    """Helper function to format timedelta as minutes"""
-    if pd.isna(td):
-        return "N/A"
-    # If it's already a number (from analyze_strategy_performance conversion)
-    if isinstance(td, (int, float)):
-        return f"{td:.1f} minutes"
-    # If it's a timedelta object
-    return f"{td.total_seconds()/60:.1f} minutes"
 
 def split_data_by_day(data: pd.DataFrame, start_hour, start_minute, end_hour, end_minute) -> Dict[datetime.date, pd.DataFrame]:
     """Split the data into separate days"""
@@ -209,42 +211,190 @@ def get_opening_range_levels(data: pd.DataFrame, or_start_hour: int, or_start_mi
 
     return high, low, tr, expected_candles
 
-def analyze_strategy_performance(trades_df: pd.DataFrame) -> Dict:
-    """Calculate strategy performance metrics from the trades DataFrame"""
-    if trades_df.empty:
-        return {}
+def optimize_tp_sl(daily_data: Dict[datetime.date, pd.DataFrame], tp_range, sl_range, buffer: float, cost: float) -> pd.DataFrame:
+    """Grid search optimization using absolute TP/SL values"""
+    results = []
 
-    metrics = {
-        'total_trades': len(trades_df),
-        'winning_trades': len(trades_df[trades_df['pnl'] > 0]),
-        'losing_trades': len(trades_df[trades_df['pnl'] < 0]),
-        'win_rate': len(trades_df[trades_df['pnl'] > 0]) / len(trades_df) * 100,
-        'total_pnl': trades_df['pnl'].sum(),
-        'avg_pnl': trades_df['pnl'].mean(),
-        'avg_trade_duration': trades_df['position_duration'].mean(),
-        'max_win': trades_df['pnl'].max(),
-        'max_loss': trades_df['pnl'].min(),
-        'profit_factor': abs(trades_df[trades_df['pnl'] > 0]['pnl'].sum() /
-                           trades_df[trades_df['pnl'] < 0]['pnl'].sum()),
-        'long_trades': len(trades_df[trades_df['direction'] == 'long']),
-        'short_trades': len(trades_df[trades_df['direction'] == 'short']),
-        'long_win_rate': len(trades_df[(trades_df['direction'] == 'long') & (trades_df['pnl'] > 0)]) /
-                        max(1, len(trades_df[trades_df['direction'] == 'long'])) * 100,
-        'short_win_rate': len(trades_df[(trades_df['direction'] == 'short') & (trades_df['pnl'] > 0)]) /
-                         max(1, len(trades_df[trades_df['direction'] == 'short'])) * 100,
-        'up_breakout_trades': len(trades_df[trades_df['breakout_direction'] == 'up']),
-        'down_breakout_trades': len(trades_df[trades_df['breakout_direction'] == 'down']),
-        'up_breakout_win_rate': len(trades_df[(trades_df['breakout_direction'] == 'up') & (trades_df['pnl'] > 0)]) /
-                               max(1, len(trades_df[trades_df['breakout_direction'] == 'up'])) * 100,
-        'down_breakout_win_rate': len(trades_df[(trades_df['breakout_direction'] == 'down') & (trades_df['pnl'] > 0)]) /
-                                max(1, len(trades_df[trades_df['breakout_direction'] == 'down'])) * 100
+    for tp_val, sl_val in product(tp_range, sl_range):
+        # Skip poor risk-reward combinations
+        if skip_poor_rr and tp_val < sl_val:
+            continue
+
+        metrics = {
+            'tp_value': tp_val,
+            'sl_value': sl_val,
+            'total_pnl': 0,
+            'win_rate': 0,
+            'trades': 0,
+            'avg_pnl': 0
+        }
+
+        for date, day_data in daily_data.items():
+            high, low, tr, expected_candles = get_opening_range_levels(
+                day_data, or_start_hour, or_start_minute, or_end_hour, or_end_minute,
+                start_hour, start_minute, end_hour, end_minute
+            )
+            if None in (high, low, tr):
+                continue
+
+            trade = simulate_trade(
+                data=day_data,
+                opening_high=high,
+                opening_low=low,
+                atr=tr,  # Still calculated but not used for TP/SL
+                expected_candles=expected_candles,
+                tp_value=tp_val,  # Now using absolute value
+                sl_value=sl_val,  # Now using absolute value
+                or_start_hour=or_start_hour,
+                or_start_minute=or_start_minute,
+                or_end_hour=or_end_hour,
+                or_end_minute=or_end_minute,
+                buffer=buffer,
+                cost=cost
+            )
+
+            if trade:
+                metrics['total_pnl'] += trade['pnl']
+                metrics['win_rate'] += 1 if trade['pnl'] > 0 else 0
+                metrics['trades'] += 1
+
+        if metrics['trades'] > 0:
+            metrics['win_rate'] = metrics['win_rate'] / metrics['trades'] * 100
+            metrics['avg_pnl'] = metrics['total_pnl'] / metrics['trades']
+            results.append(metrics)
+
+    return pd.DataFrame(results).sort_values('total_pnl', ascending=False)
+
+def simulate_trade(
+    data: pd.DataFrame,
+    opening_high: float,
+    opening_low: float,
+    atr: float,
+    expected_candles: int,
+    tp_value: float,
+    sl_value: float,
+    or_start_hour: int,
+    or_start_minute: str,
+    or_end_hour: int,
+    or_end_minute: str,
+    buffer: float,
+    cost: float
+) -> Optional[Dict[str, Any]]:
+    """Execute trade simulation with absolute TP/SL values"""
+    # Convert string minutes to integers
+    or_start_min = int(or_start_minute)
+    or_end_min = int(or_end_minute)
+
+    opening_range_end_time = time(or_end_hour, or_end_min)
+    post_opening_data = data[data.index.time > opening_range_end_time]
+
+    trade = {
+        'date': data.index[0].date(),
+        'candles': len(data),
+        'expected_candles': expected_candles,
+        'opening_high': opening_high,
+        'opening_low': opening_low,
+        'direction': None,
+        'entry_time': None,
+        'entry_price': None,
+        'exit_time': None,
+        'exit_price': None,
+        'exit_reason': None,
+        'pnl': None,
+        'trade_taken': False,
+        'position_duration': None,
+        'atr': round(atr, 2),
+        'tp_value': round(tp_value, 2),
+        'sl_value': round(sl_value, 2),
+        'tp_distance': round(tp_value, 2),
+        'sl_distance': round(sl_value, 2)
     }
 
-    # Convert timedelta to minutes for display
-    if not pd.isna(metrics['avg_trade_duration']):
-        metrics['avg_trade_duration'] = metrics['avg_trade_duration'].total_seconds() / 60
+    for idx, row in post_opening_data.iterrows():
+        current_high = safe_float(row['High'])
+        current_low = safe_float(row['Low'])
 
-    return metrics
+        # Entry logic
+        if trade['entry_time'] is None:
+            if current_high < opening_high:  # Long
+                entry_price = opening_high - buffer - cost
+                trade.update({
+                    'entry_time': idx,
+                    'entry_price': entry_price,
+                    'direction': 'long',
+                    'tp_price': entry_price + tp_value,
+                    'sl_price': entry_price - sl_value,
+                    'trade_taken': True
+                })
+            elif current_low > opening_low:  # Short
+                entry_price = opening_low + buffer + cost
+                trade.update({
+                    'entry_time': idx,
+                    'entry_price': entry_price,
+                    'direction': 'short',
+                    'tp_price': entry_price - tp_value,
+                    'sl_price': entry_price + sl_value,
+                    'trade_taken': True
+                })
+            continue
+
+        # Exit logic
+        if trade['direction'] == 'long':
+            if current_low <= trade['sl_price']:
+                trade.update({
+                    'exit_time': idx,
+                    'exit_price': trade['sl_price'],
+                    'exit_reason': 'SL',
+                    'pnl': -sl_value
+                })
+                break
+            elif current_high >= trade['tp_price']:
+                trade.update({
+                    'exit_time': idx,
+                    'exit_price': trade['tp_price'],
+                    'exit_reason': 'TP',
+                    'pnl': tp_value
+                })
+                break
+        else:  # short
+            if current_high >= trade['sl_price']:
+                trade.update({
+                    'exit_time': idx,
+                    'exit_price': trade['sl_price'],
+                    'exit_reason': 'SL',
+                    'pnl': -sl_value
+                })
+                break
+            elif current_low <= trade['tp_price']:
+                trade.update({
+                    'exit_time': idx,
+                    'exit_price': trade['tp_price'],
+                    'exit_reason': 'TP',
+                    'pnl': tp_value
+                })
+                break
+
+    # EOD exit
+    if trade['entry_time'] and not trade['exit_time']:
+        last_close = safe_float(post_opening_data['Close'].iloc[-1])
+        trade.update({
+            'exit_time': post_opening_data.index[-1],
+            'exit_price': last_close,
+            'exit_reason': 'EOD',
+            'pnl': (last_close - trade['entry_price']) if trade['direction'] == 'long'
+                   else (trade['entry_price'] - last_close)
+        })
+
+    if trade['trade_taken']:
+        trade['position_duration'] = trade['exit_time'] - trade['entry_time']
+
+    return trade if trade['trade_taken'] else None
+
+def calculate_vwap(data):
+    """Calculate Volume-Weighted Average Price (VWAP) using HLC3 as price input"""
+    hlc3 = (data['High'] + data['Low'] + data['Close']) / 3  # HLC3 instead of typical Close
+    vwap = (hlc3 * data['Volume']).cumsum() / data['Volume'].cumsum()
+    return vwap
 
 def plot_single_day(data: pd.DataFrame, date: datetime.date,
                    opening_high: Optional[float], opening_low: Optional[float],
@@ -299,14 +449,6 @@ def plot_single_day(data: pd.DataFrame, date: datetime.date,
         entry_time = mdates.date2num(trade['entry_time'].to_pydatetime())
         exit_time = mdates.date2num(trade['exit_time'].to_pydatetime())
 
-        # Highlight breakout area
-        breakout_time = mdates.date2num(
-            data[(data.index.time > time(or_end_hour, int(or_end_minute))) &
-            (data.index.time <= trade['entry_time'].time())].index[0].to_pydatetime()
-        )
-
-        ax1.axvspan(breakout_time, entry_time, alpha=0.2, color='orange', label='Breakout Confirmation')
-
         ax1.plot(entry_time, trade['entry_price'], 'bo', markersize=10, label='Entry')
         ax1.plot(exit_time, trade['exit_price'], 'ro', markersize=10, label='Exit')
         ax1.plot([entry_time, exit_time],
@@ -316,7 +458,6 @@ def plot_single_day(data: pd.DataFrame, date: datetime.date,
         trade_summary = (
             f"Trade Executed:\n"
             f"Direction: {trade['direction']}\n"
-            f"Breakout: {trade['breakout_direction']}\n"
             f"Entry Time: {trade['entry_time'].strftime('%Y-%m-%d %H:%M:%S %Z')}\n"
             f"Entry Price: ${trade['entry_price']:.2f}\n"
             f"Exit Time: {trade['exit_time'].strftime('%Y-%m-%d %H:%M:%S %Z')}\n"
@@ -370,8 +511,12 @@ def plot_single_day(data: pd.DataFrame, date: datetime.date,
     for ax in [ax1, ax2, ax3]:
         ax.set_xlim(x_min, x_max)
 
+    # Hide x-axis labels for upper plots
+    # ax1.set_xticklabels([])
+    # ax2.set_xticklabels([])
+
     ax1.grid(True, which='major', linestyle='-', alpha=0.7)
-    ax1.set_title(f'{ticker} 5-minute Chart ({date}) - Rebound Strategy')
+    ax1.set_title(f'{ticker} 5-minute Chart ({date})')
     ax1.legend(loc='upper left', fontsize='small')
 
     plt.tight_layout()
@@ -497,219 +642,159 @@ def plot_efficiency_frontier(results_df: pd.DataFrame):
     st.pyplot(fig)
     plt.close()
 
-def optimize_tp_sl(daily_data: Dict[datetime.date, pd.DataFrame], tp_range, sl_range, buffer: float, cost: float) -> pd.DataFrame:
-    """Grid search optimization using absolute TP/SL values"""
-    results = []
+def analyze_strategy_performance(trades_df: pd.DataFrame) -> Dict:
+    """Calculate strategy performance metrics from the trades DataFrame"""
+    if trades_df.empty:
+        return {}
 
-    for tp_val, sl_val in product(tp_range, sl_range):
-        # Skip poor risk-reward combinations
-        if skip_poor_rr and tp_val < sl_val:
-            continue
-
-        metrics = {
-            'tp_value': tp_val,
-            'sl_value': sl_val,
-            'total_pnl': 0,
-            'win_rate': 0,
-            'trades': 0,
-            'avg_pnl': 0
-        }
-
-        for date, day_data in daily_data.items():
-            high, low, tr, expected_candles = get_opening_range_levels(
-                day_data, or_start_hour, or_start_minute, or_end_hour, or_end_minute,
-                start_hour, start_minute, end_hour, end_minute
-            )
-            if None in (high, low, tr):
-                continue
-
-            trade = simulate_rebound_trade(
-                data=day_data,
-                opening_high=high,
-                opening_low=low,
-                atr=tr,
-                expected_candles=expected_candles,
-                tp_value=tp_val,
-                sl_value=sl_val,
-                or_start_hour=or_start_hour,
-                or_start_minute=or_start_minute,
-                or_end_hour=or_end_hour,
-                or_end_minute=or_end_minute,
-                buffer=buffer,
-                cost=cost,
-                confirmation_bars=confirmation_bars,
-                close_inside=close_inside,
-                buffer_multiplier=buffer_multiplier
-            )
-
-            if trade:
-                metrics['total_pnl'] += trade['pnl']
-                metrics['win_rate'] += 1 if trade['pnl'] > 0 else 0
-                metrics['trades'] += 1
-
-        if metrics['trades'] > 0:
-            metrics['win_rate'] = metrics['win_rate'] / metrics['trades'] * 100
-            metrics['avg_pnl'] = metrics['total_pnl'] / metrics['trades']
-            results.append(metrics)
-
-    return pd.DataFrame(results).sort_values('total_pnl', ascending=False)
-
-def simulate_rebound_trade(
-    data: pd.DataFrame,
-    opening_high: float,
-    opening_low: float,
-    atr: float,
-    expected_candles: int,
-    tp_value: float,
-    sl_value: float,
-    or_start_hour: int,
-    or_start_minute: str,
-    or_end_hour: int,
-    or_end_minute: str,
-    buffer: float,
-    cost: float,
-    confirmation_bars: int = 1,
-    close_inside: bool = True,
-    buffer_multiplier: float = 1.0
-) -> Optional[Dict[str, Any]]:
-    """Execute rebound trade simulation with absolute TP/SL values"""
-    # Convert string minutes to integers
-    or_start_min = int(or_start_minute)
-    or_end_min = int(or_end_minute)
-
-    opening_range_end_time = time(or_end_hour, or_end_min)
-    post_opening_data = data[data.index.time > opening_range_end_time]
-
-    trade = {
-        'date': data.index[0].date(),
-        'candles': len(data),
-        'expected_candles': expected_candles,
-        'opening_high': opening_high,
-        'opening_low': opening_low,
-        'direction': None,
-        'entry_time': None,
-        'entry_price': None,
-        'exit_time': None,
-        'exit_price': None,
-        'exit_reason': None,
-        'pnl': None,
-        'trade_taken': False,
-        'position_duration': None,
-        'atr': round(atr, 2),
-        'tp_value': round(tp_value, 2),
-        'sl_value': round(sl_value, 2),
-        'tp_distance': round(tp_value, 2),
-        'sl_distance': round(sl_value, 2),
-        'breakout_direction': None
+    # Overall metrics
+    metrics = {
+        'total_trades': len(trades_df),
+        'winning_trades': len(trades_df[trades_df['pnl'] > 0]),
+        'losing_trades': len(trades_df[trades_df['pnl'] < 0]),
+        'win_rate': len(trades_df[trades_df['pnl'] > 0]) / len(trades_df) * 100,
+        'total_pnl': trades_df['pnl'].sum(),
+        'avg_pnl': trades_df['pnl'].mean(),
+        'avg_trade_duration': trades_df['position_duration'].mean(),
+        'max_win': trades_df['pnl'].max(),
+        'max_loss': trades_df['pnl'].min(),
+        'profit_factor': abs(trades_df[trades_df['pnl'] > 0]['pnl'].sum() /
+                           trades_df[trades_df['pnl'] < 0]['pnl'].sum())
     }
 
-    # Track breakout direction and confirmation
-    breakout_confirmed = False
-    breakout_direction = None
-    confirmation_count = 0
-
-    for idx, row in post_opening_data.iterrows():
-        current_high = safe_float(row['High'])
-        current_low = safe_float(row['Low'])
-        current_close = safe_float(row['Close'])
-
-        # Check for breakout if not already confirmed
-        if not breakout_confirmed:
-            if current_high > opening_high + (buffer * buffer_multiplier):
-                breakout_direction = 'up'
-                confirmation_count += 1
-            elif current_low < opening_low - (buffer * buffer_multiplier):
-                breakout_direction = 'down'
-                confirmation_count += 1
-            else:
-                confirmation_count = 0
-
-            # Check if we have enough confirmation bars
-            if confirmation_count >= confirmation_bars:
-                breakout_confirmed = True
-                trade['breakout_direction'] = breakout_direction
-
-        # Entry logic (after breakout is confirmed)
-        if breakout_confirmed and trade['entry_time'] is None:
-            if breakout_direction == 'up' and (current_close < opening_high if close_inside else True):
-                # Take short position after upside breakout
-                entry_price = opening_high - buffer - cost
-                trade.update({
-                    'entry_time': idx,
-                    'entry_price': entry_price,
-                    'direction': 'short',
-                    'tp_price': entry_price - tp_value,
-                    'sl_price': entry_price + sl_value,
-                    'trade_taken': True
-                })
-            elif breakout_direction == 'down' and (current_close > opening_low if close_inside else True):
-                # Take long position after downside breakout
-                entry_price = opening_low + buffer + cost
-                trade.update({
-                    'entry_time': idx,
-                    'entry_price': entry_price,
-                    'direction': 'long',
-                    'tp_price': entry_price + tp_value,
-                    'sl_price': entry_price - sl_value,
-                    'trade_taken': True
-                })
-            continue
-
-        # Exit logic
-        if trade['direction'] == 'long':
-            if current_low <= trade['sl_price']:
-                trade.update({
-                    'exit_time': idx,
-                    'exit_price': trade['sl_price'],
-                    'exit_reason': 'SL',
-                    'pnl': -sl_value
-                })
-                break
-            elif current_high >= trade['tp_price']:
-                trade.update({
-                    'exit_time': idx,
-                    'exit_price': trade['tp_price'],
-                    'exit_reason': 'TP',
-                    'pnl': tp_value
-                })
-                break
-        elif trade['direction'] == 'short':
-            if current_high >= trade['sl_price']:
-                trade.update({
-                    'exit_time': idx,
-                    'exit_price': trade['sl_price'],
-                    'exit_reason': 'SL',
-                    'pnl': -sl_value
-                })
-                break
-            elif current_low <= trade['tp_price']:
-                trade.update({
-                    'exit_time': idx,
-                    'exit_price': trade['tp_price'],
-                    'exit_reason': 'TP',
-                    'pnl': tp_value
-                })
-                break
-
-    # EOD exit
-    if trade['entry_time'] and not trade['exit_time']:
-        last_close = safe_float(post_opening_data['Close'].iloc[-1])
-        trade.update({
-            'exit_time': post_opening_data.index[-1],
-            'exit_price': last_close,
-            'exit_reason': 'EOD',
-            'pnl': (last_close - trade['entry_price']) if trade['direction'] == 'long'
-                   else (trade['entry_price'] - last_close)
+    # Long positions metrics
+    long_trades = trades_df[trades_df['direction'] == 'long']
+    if not long_trades.empty:
+        metrics.update({
+            'long_total_trades': len(long_trades),
+            'long_winning_trades': len(long_trades[long_trades['pnl'] > 0]),
+            'long_losing_trades': len(long_trades[long_trades['pnl'] < 0]),
+            'long_win_rate': len(long_trades[long_trades['pnl'] > 0]) / len(long_trades) * 100,
+            'long_total_pnl': long_trades['pnl'].sum(),
+            'long_avg_pnl': long_trades['pnl'].mean(),
+            'long_avg_trade_duration': long_trades['position_duration'].mean(),
+            'long_max_win': long_trades['pnl'].max(),
+            'long_max_loss': long_trades['pnl'].min(),
+            'long_profit_factor': abs(long_trades[long_trades['pnl'] > 0]['pnl'].sum() /
+                                    long_trades[long_trades['pnl'] < 0]['pnl'].sum())
         })
 
-    if trade['trade_taken']:
-        trade['position_duration'] = trade['exit_time'] - trade['entry_time']
+    # Short positions metrics
+    short_trades = trades_df[trades_df['direction'] == 'short']
+    if not short_trades.empty:
+        metrics.update({
+            'short_total_trades': len(short_trades),
+            'short_winning_trades': len(short_trades[short_trades['pnl'] > 0]),
+            'short_losing_trades': len(short_trades[short_trades['pnl'] < 0]),
+            'short_win_rate': len(short_trades[short_trades['pnl'] > 0]) / len(short_trades) * 100,
+            'short_total_pnl': short_trades['pnl'].sum(),
+            'short_avg_pnl': short_trades['pnl'].mean(),
+            'short_avg_trade_duration': short_trades['position_duration'].mean(),
+            'short_max_win': short_trades['pnl'].max(),
+            'short_max_loss': short_trades['pnl'].min(),
+            'short_profit_factor': abs(short_trades[short_trades['pnl'] > 0]['pnl'].sum() /
+                                  short_trades[short_trades['pnl'] < 0]['pnl'].sum())
+        })
 
-    return trade if trade['trade_taken'] else None
+    return metrics
 
-# [Rest of the functions remain the same: plot_single_day, plot_optimization_heatmap,
-# plot_win_rate_heatmap, plot_efficiency_frontier, analyze_strategy_performance,
-# format_duration_minutes, calculate_vwap]
+def format_duration_minutes(td):
+    """Helper function to format timedelta as minutes"""
+    if pd.isna(td):
+        return "N/A"
+    return f"{td.total_seconds()/60:.1f}"
+
+
+def prepare_download_data(data: pd.DataFrame) -> Tuple[bytes, str]:
+    """Prepares data for download with European timezone timestamps"""
+    # Make a copy to avoid modifying original
+    download_data = data.copy()
+
+    # Convert to Europe timezone but keep as naive datetime (remove tzinfo)
+    if download_data.index.tz is not None:
+        download_data.index = download_data.index.tz_convert(timezone).tz_localize(None)
+
+    # Reorder columns to match your preferred format
+    download_data = download_data[['Open', 'High', 'Low', 'Close', 'Volume']]
+
+    # Format dates in European style (DD/MM/YYYY)
+    download_data.index = download_data.index.strftime('%d/%m/%Y %H:%M')
+
+    # Generate filename with parameters
+    safe_timezone = timezone.replace('/', '_')
+    file_name = f"{ticker}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}_{safe_timezone}.csv"
+
+    # Convert to CSV bytes
+    csv_data = download_data.to_csv().encode('utf-8')
+
+    return csv_data, file_name
+
+def process_uploaded_data(uploaded_file, timezone: str, start_date, end_date) -> pd.DataFrame:
+    """Processes uploaded CSV with European timestamps"""
+    try:
+        # Read CSV skipping the first two rows (header starts at row 3)
+        full_data = pd.read_csv(uploaded_file, index_col=0, parse_dates=True, dayfirst=True, skiprows=2)
+
+        # Rename columns to match expected format
+        full_data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+
+        # Validate required columns
+        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if not all(col in full_data.columns for col in required_cols):
+            missing = [col for col in required_cols if col not in full_data.columns]
+            raise ValueError(f"Missing required columns: {missing}")
+
+        # Convert naive datetime to localized (assume CSV times are in Europe timezone)
+        full_data.index = pd.to_datetime(full_data.index).tz_localize(timezone)
+
+        # Filter date range
+        start_dt = pd.to_datetime(start_date).tz_localize(timezone)
+        end_dt = pd.to_datetime(end_date).tz_localize(timezone) + timedelta(days=1)
+        full_data = full_data[(full_data.index >= start_dt) & (full_data.index <= end_dt)]
+
+        if full_data.empty:
+            raise ValueError("No data in selected date range")
+
+        return full_data
+
+    except Exception as e:
+        st.error(f"CSV processing error: {str(e)}")
+        st.stop()
+
+# Download button
+if st.sidebar.button("Download Processed Data"):
+    with st.spinner("Downloading and processing data..."):
+        try:
+            processed_data = get_trading_days_data(
+                start_date=start_date,
+                end_date=end_date,
+                ticker=ticker,
+                timezone=timezone
+            )
+
+            if not processed_data.empty:
+                st.success(f"Downloaded {len(processed_data)} bars of data")
+
+                # Show preview in European date format
+                preview_data = processed_data.copy()
+                preview_data.index = preview_data.index.strftime('%d/%m/%Y %H:%M')
+                st.dataframe(preview_data[['Open', 'High', 'Low', 'Close', 'Volume']].head())
+
+                csv_data, file_name = prepare_download_data(processed_data)
+
+                st.download_button(
+                    label="Download Processed Data as CSV",
+                    data=csv_data,
+                    file_name=file_name,
+                    mime='text/csv',
+                    help="Contains timezone-converted data in UTC format"
+                )
+            else:
+                st.error("No data available for download")
+
+        except Exception as e:
+            st.error(f"Download failed: {str(e)}")
+
 
 # Main execution block
 if st.sidebar.button("Run Analysis"):
@@ -719,10 +804,22 @@ if st.sidebar.button("Run Analysis"):
         sl_range = np.round(np.arange(sl_min, sl_max + sl_step, sl_step), 2)
 
         # Get and prepare data
-        full_data = get_trading_days_data(start_date, end_date, ticker, timezone)
-        if full_data.empty:
-            st.error("No data available for the specified date range!")
-            st.stop()
+        if data_source == "YFinance":
+            full_data = get_trading_days_data(start_date, end_date, ticker, timezone)
+            if full_data.empty:
+                st.error("No Yahoo Finance data available!")
+                st.stop()
+        else:  # CSV upload
+            if uploaded_file is None:
+                st.error("Please upload a CSV file first!")
+                st.stop()
+
+            full_data = process_uploaded_data(
+                uploaded_file=uploaded_file,
+                timezone=timezone,
+                start_date=start_date,
+                end_date=end_date
+            )
 
         daily_data = split_data_by_day(full_data, start_hour, start_minute, end_hour, end_minute)
         st.success(f"Found {len(daily_data)} trading days in the date range")
@@ -770,7 +867,7 @@ if st.sidebar.button("Run Analysis"):
             if None in (high, low, tr):
                 continue
 
-            trade = simulate_rebound_trade(
+            trade = simulate_trade(
                 data=day_data,
                 opening_high=high,
                 opening_low=low,
@@ -783,10 +880,7 @@ if st.sidebar.button("Run Analysis"):
                 or_end_hour=or_end_hour,
                 or_end_minute=or_end_minute,
                 buffer=buffer_pts,
-                cost=cost_pts,
-                confirmation_bars=confirmation_bars,
-                close_inside=close_inside,
-                buffer_multiplier=buffer_multiplier
+                cost=cost_pts
             )
 
             if trade:
@@ -830,35 +924,30 @@ if st.sidebar.button("Run Analysis"):
             st.markdown("### Long Positions Performance")
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Total Long Trades", metrics.get('long_trades', 0))
-                st.metric("Winning Long Trades", len(trades_df[(trades_df['direction'] == 'long') & (trades_df['pnl'] > 0)]))
-                st.metric("Losing Long Trades", len(trades_df[(trades_df['direction'] == 'long') & (trades_df['pnl'] < 0)]))
+                st.metric("Total Long Trades", metrics.get('long_total_trades', 0))
+                st.metric("Winning Long Trades", metrics.get('long_winning_trades', 0))
+                st.metric("Losing Long Trades", metrics.get('long_losing_trades', 0))
                 st.metric("Long Win Rate", f"{metrics.get('long_win_rate', 0):.1f}%")
             with col2:
-                long_trades = trades_df[trades_df['direction'] == 'long']
-                long_pnl = long_trades['pnl'].sum() if not long_trades.empty else 0
-                st.metric("Long Total PNL", f"{long_pnl:.2f}")
-                st.metric("Long Average PNL", f"{long_trades['pnl'].mean() if not long_trades.empty else 0:.2f}")
-                st.metric("Long Average Duration", format_duration_minutes(long_trades['position_duration'].mean() if not long_trades.empty else None))
-                long_profit_factor = abs(long_trades[long_trades['pnl'] > 0]['pnl'].sum() / long_trades[long_trades['pnl'] < 0]['pnl'].abs().sum()) if not long_trades.empty and len(long_trades[long_trades['pnl'] < 0]) > 0 else 0
-                st.metric("Long Profit Factor", f"{long_profit_factor:.2f}")
+                st.metric("Long Total PNL", f"{metrics.get('long_total_pnl', 0):.2f}")
+                st.metric("Long Average PNL", f"{metrics.get('long_avg_pnl', 0):.2f}")
+                st.metric("Long Average Duration", format_duration_minutes(metrics.get('long_avg_trade_duration')))
+                st.metric("Long Profit Factor", f"{metrics.get('long_profit_factor', 0):.2f}")
 
             # Short Positions Performance
             st.markdown("### Short Positions Performance")
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Total Short Trades", metrics.get('short_trades', 0))
-                st.metric("Winning Short Trades", len(trades_df[(trades_df['direction'] == 'short') & (trades_df['pnl'] > 0)]))
-                st.metric("Losing Short Trades", len(trades_df[(trades_df['direction'] == 'short') & (trades_df['pnl'] < 0)]))
+                st.metric("Total Short Trades", metrics.get('short_total_trades', 0))
+                st.metric("Winning Short Trades", metrics.get('short_winning_trades', 0))
+                st.metric("Losing Short Trades", metrics.get('short_losing_trades', 0))
                 st.metric("Short Win Rate", f"{metrics.get('short_win_rate', 0):.1f}%")
             with col2:
-                short_trades = trades_df[trades_df['direction'] == 'short']
-                short_pnl = short_trades['pnl'].sum() if not short_trades.empty else 0
-                st.metric("Short Total PNL", f"{short_pnl:.2f}")
-                st.metric("Short Average PNL", f"{short_trades['pnl'].mean() if not short_trades.empty else 0:.2f}")
-                st.metric("Short Average Duration", format_duration_minutes(short_trades['position_duration'].mean() if not short_trades.empty else None))
-                short_profit_factor = abs(short_trades[short_trades['pnl'] > 0]['pnl'].sum() / short_trades[short_trades['pnl'] < 0]['pnl'].abs().sum()) if not short_trades.empty and len(short_trades[short_trades['pnl'] < 0]) > 0 else 0
-                st.metric("Short Profit Factor", f"{short_profit_factor:.2f}")
+                st.metric("Short Total PNL", f"{metrics.get('short_total_pnl', 0):.2f}")
+                st.metric("Short Average PNL", f"{metrics.get('short_avg_pnl', 0):.2f}")
+                st.metric("Short Average Duration", format_duration_minutes(metrics.get('short_avg_trade_duration')))
+                st.metric("Short Profit Factor", f"{metrics.get('short_profit_factor', 0):.2f}")
+
 
             # Plot cumulative PNL
             st.subheader("Cumulative PNL Curve")
@@ -914,7 +1003,7 @@ if st.sidebar.button("Run Analysis"):
                     )
 
                     # Display date and P/L as a header
-                    st.markdown(f"### {date.strftime('%Y-%m-%d')} - P/L: {trade['pnl']:.2f} points - Breakout: {trade['breakout_direction']}")
+                    st.markdown(f"### {date.strftime('%Y-%m-%d')} - P/L: {trade['pnl']:.2f} points")
 
                     # Plot the trade with original full-size function
                     plot_single_day(day_data, date, high, low, trade, timezone)
